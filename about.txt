@@ -1,0 +1,38 @@
+# 🔥 MR.MYTHIC_KILLER's Proxy Scraper & Tester — Version 6.0
+
+A fully advanced, multi-threaded **Proxy Scraper & Tester** built in Python.  
+It scrapes from **200+ live proxy sources** (Websites + GitHub + APIs + Telegram),  
+detects protocols automatically, tests proxies, filters duplicates, detects country  
+via GeoIP API, and finally uploads organized proxy files to **Discord Webhook**.
+
+---
+
+## 🚀 Features
+
+### ✔ 200+ Proxy Sources
+- 50+ Websites
+- 100+ GitHub raw lists
+- 30+ API endpoints
+- Telegram & Cloud sources support
+- Auto-pagination
+
+### ✔ Proxy Intelligence
+- Auto protocol detection: **HTTP / HTTPS / SOCKS4 / SOCKS5**
+- Duplicate removal (optimized)
+- Country detection (via GeoIP API)
+- Anonymity level detection
+
+### ✔ High-Performance Scraper
+- Multi-threading via `concurrent.futures`
+- Fast HTTP client using **httpx**
+- Smart retry logic
+- BeautifulSoup parsing
+
+### ✔ Proxy Testing Engine
+- Real-time CUI output
+- Good/Bad proxy detection
+- Timeout management
+- Statistics: CPM, working %, per-protocol count
+
+### ✔ Organized Output System
+Automatically saves proxies to:
