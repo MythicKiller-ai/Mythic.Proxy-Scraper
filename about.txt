@@ -35,4 +35,4 @@ via GeoIP API, and finally uploads organized proxy files to **Discord Webhook**.
 - Statistics: CPM, working %, per-protocol count
 
 ### ✔ Organized Output System
-Automatically saves proxies to:
+Automatically saves proxies in result folder
