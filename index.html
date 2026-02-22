@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mythic Proxy Scraper</title>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    /* Reset */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Roboto', sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(135deg, #0a1f3f, #01172d);
+      color: #fff;
+    }
+
+    .container {
+      text-align: center;
+      background-color: #081429;
+      padding: 50px 40px;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      max-width: 500px;
+      transition: transform 0.3s ease;
+    }
+
+    .container:hover {
+      transform: scale(1.05);
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      margin-bottom: 20px;
+      color: #00bfff;
+      text-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    }
+
+    p {
+      font-size: 1rem;
+      margin-bottom: 30px;
+      color: #cfd8dc;
+    }
+
+    .btn {
+      background: #00bfff;
+      color: #fff;
+      padding: 15px 30px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.3s, transform 0.2s;
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .btn:hover {
+      background: #0099cc;
+      transform: translateY(-3px);
+    }
+
+    .footer {
+      margin-top: 30px;
+      font-size: 0.85rem;
+      color: #78909c;
+    }
+
+    @media(max-width: 600px){
+      .container {
+        padding: 40px 20px;
+      }
+
+      h1 {
+        font-size: 1.8rem;
+      }
+
+      .btn {
+        padding: 12px 25px;
+        font-size: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Mythic Proxy Scraper</h1>
+    <p>Open-source proxy scraper tool. Click below to view the code and setup on GitHub.</p>
+    <a href="https://github.com/MythicKiller-ai/Mythic.Proxy-Scraper" class="btn" target="_blank">View Tool</a>
+    <div class="footer">© 2026 MythicKiller-ai. All rights reserved.</div>
+  </div>
+</body>
+</html>
