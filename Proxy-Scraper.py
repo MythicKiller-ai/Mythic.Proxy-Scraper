@@ -1,22 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                      MR.MYTHIC_KILLER'S PROXY SCRAPER & TESTER
-                              by mr.mythic_killer | Version 1.0
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Features:
-  • 200+ PROXY SOURCES (Websites + GitHub + APIs + Telegram + More)
-  • Duplicate prevention (same proxies har bar nahi aayenge)
-  • Protocol detection (HTTP/HTTPS/SOCKS4/SOCKS5)
-  • COUNTRY & ANONYMITY DETECTION (via API and parsing)
-  • DISCORD FILE UPLOAD notifications (separate files per protocol)
-  • Real-time CUI with detailed stats
-  • Saves proxies in organized files
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-
 import os
 import re
 import sys
@@ -37,21 +21,16 @@ import socks
 import httpx
 from bs4 import BeautifulSoup
 
-# Initialize Colorama
 init(autoreset=True)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ================= CONFIGURATION =================
 RESULTS_DIR = "results"
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
-# Discord Webhook (hardcoded as requested)
 DISCORD_WEBHOOK = "YOUR_DISCORD_WEBHOOK_URL_HERE"
 
-# GeoIP API for country detection (free, no key needed)
 GEOIP_API = "http://ip-api.com/json/{}?fields=country,countryCode"
 
-# Colors for CUI
 C = {
     'header': Fore.MAGENTA + Style.BRIGHT,
     'menu': Fore.CYAN,
@@ -71,7 +50,6 @@ C = {
     'reset': Style.RESET_ALL
 }
 
-# ================= BANNER =================
 BANNER = f"""
 {C['header']}
 ╔═══════════════════════════════════════════════════════════════════╗
@@ -91,9 +69,7 @@ BANNER = f"""
 {C['reset']}
 """
 
-# ================= 200+ PROXY SOURCES =================
 SCRAPE_SOURCES = [
-    # === WEBSITES (50+) ===
     {'name': 'Geonode', 'url': 'https://geonode.com/free-proxy-list', 'type': 'html', 'pages': 5},
     {'name': 'FreeProxy.World', 'url': 'https://www.freeproxy.world/', 'type': 'html', 'pages': 5},
     {'name': 'FreeProxy.World HTTP', 'url': 'https://www.freeproxy.world/?type=http', 'type': 'html', 'pages': 3},
@@ -135,8 +111,6 @@ SCRAPE_SOURCES = [
     {'name': 'ProxyList.cc', 'url': 'https://proxylist.cc/', 'type': 'html', 'pages': 2},
     {'name': 'ProxyList.co', 'url': 'https://proxylist.co/', 'type': 'html', 'pages': 2},
     {'name': 'ProxyList.net', 'url': 'https://proxylist.net/', 'type': 'html', 'pages': 2},
-    
-    # === GITHUB REPOS (100+) ===
     {'name': 'GitHub TheSpeedX HTTP', 'url': 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt', 'type': 'raw', 'pages': 1},
     {'name': 'GitHub TheSpeedX SOCKS4', 'url': 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt', 'type': 'raw', 'pages': 1},
     {'name': 'GitHub TheSpeedX SOCKS5', 'url': 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt', 'type': 'raw', 'pages': 1},
@@ -184,8 +158,6 @@ SCRAPE_SOURCES = [
     {'name': 'GitHub blackhorser HTTP', 'url': 'https://raw.githubusercontent.com/blackhorser/Proxy-List/main/http.txt', 'type': 'raw', 'pages': 1},
     {'name': 'GitHub blackhorser SOCKS4', 'url': 'https://raw.githubusercontent.com/blackhorser/Proxy-List/main/socks4.txt', 'type': 'raw', 'pages': 1},
     {'name': 'GitHub blackhorser SOCKS5', 'url': 'https://raw.githubusercontent.com/blackhorser/Proxy-List/main/socks5.txt', 'type': 'raw', 'pages': 1},
-    
-    # === APIS (30+) ===
     {'name': 'ProxyScrape HTTP', 'url': 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=getproxies&protocol=http&timeout=10000&country=all', 'type': 'raw', 'pages': 1},
     {'name': 'ProxyScrape SOCKS4', 'url': 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=getproxies&protocol=socks4&timeout=10000&country=all', 'type': 'raw', 'pages': 1},
     {'name': 'ProxyScrape SOCKS5', 'url': 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=getproxies&protocol=socks5&timeout=10000&country=all', 'type': 'raw', 'pages': 1},
@@ -206,8 +178,6 @@ SCRAPE_SOURCES = [
     {'name': 'Proxy-List API', 'url': 'https://www.proxy-list.download/api/v1/get?type=http', 'type': 'raw', 'pages': 1},
     {'name': 'PubProxy API', 'url': 'http://pubproxy.com/api/proxy?limit=20&format=txt', 'type': 'raw', 'pages': 3},
     {'name': 'ProxyRack API', 'url': 'https://www.proxyrack.com/api/freeproxies?protocol=http', 'type': 'raw', 'pages': 1},
-    
-    # === TELEGRAM CHANNELS (scrape via web) ===
     {'name': 'Telegram Proxy Channel 1', 'url': 'https://t.me/s/proxy4par3', 'type': 'html', 'pages': 2},
     {'name': 'Telegram Proxy Channel 2', 'url': 'https://t.me/s/proxy_list', 'type': 'html', 'pages': 2},
     {'name': 'Telegram Proxy Channel 3', 'url': 'https://t.me/s/proxy_socks5', 'type': 'html', 'pages': 2},
@@ -218,15 +188,12 @@ SCRAPE_SOURCES = [
     {'name': 'Telegram Proxy Channel 8', 'url': 'https://t.me/s/proxy_list_daily', 'type': 'html', 'pages': 2},
     {'name': 'Telegram Proxy Channel 9', 'url': 'https://t.me/s/socks5_proxies', 'type': 'html', 'pages': 2},
     {'name': 'Telegram Proxy Channel 10', 'url': 'https://t.me/s/http_proxy_list', 'type': 'html', 'pages': 2},
-    
-    # === FORUMS & OTHER SOURCES ===
     {'name': 'Reddit r/proxy', 'url': 'https://www.reddit.com/r/proxy/new/.rss', 'type': 'html', 'pages': 2},
     {'name': 'BlackHatWorld', 'url': 'https://www.blackhatworld.com/forums/proxy.129/', 'type': 'html', 'pages': 2},
     {'name': 'HackForums', 'url': 'https://hackforums.net/forumdisplay.php?fid=69', 'type': 'html', 'pages': 2},
     {'name': 'MPGH Proxy Section', 'url': 'https://www.mpgh.net/forum/forumdisplay.php?f=293', 'type': 'html', 'pages': 2},
 ]
 
-# ================= GLOBAL VARIABLES =================
 scraped_proxies = []
 valid_proxies = []
 invalid_proxies = []
@@ -240,11 +207,9 @@ lock = threading.Lock()
 start_time = time.time()
 proxy_queue = Queue()
 stop_testing = False
-seen_proxies = set()  # For duplicate prevention
+seen_proxies = set()
 
-# ================= COUNTRY & ANONYMITY DETECTION =================
 def get_ip_info(ip):
-    """Get country and other info for an IP address"""
     try:
         url = GEOIP_API.format(ip)
         r = requests.get(url, timeout=3)
@@ -259,7 +224,6 @@ def get_ip_info(ip):
     return 'Unknown', 'Unknown'
 
 def extract_anonymity_from_text(text):
-    """Extract anonymity level from text (elite, anonymous, transparent)"""
     text_lower = text.lower()
     if 'elite' in text_lower or 'high' in text_lower:
         return 'Elite'
@@ -269,7 +233,6 @@ def extract_anonymity_from_text(text):
         return 'Transparent'
     return 'Unknown'
 
-# ================= HELPER FUNCTIONS =================
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
@@ -297,27 +260,21 @@ def format_time(seconds):
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 def parse_proxy_line(line):
-    """Parse any line to extract IP:PORT - handles extra text"""
-    # Match IP:PORT pattern
     match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})', line)
     if match:
         proxy = f"{match.group(1)}:{match.group(2)}"
-        # Check for duplicates
         with lock:
             if proxy not in seen_proxies:
                 seen_proxies.add(proxy)
                 return proxy
     return None
 
-# ================= GEONODE CSV PARSER =================
 def parse_geonode_csv(csv_text):
-    """Special parser for Geonode CSV format"""
     proxies = []
     try:
         csv_reader = csv.reader(io.StringIO(csv_text))
         headers = next(csv_reader)
         
-        # Find column indices
         ip_idx = None
         port_idx = None
         protocol_idx = None
@@ -349,12 +306,10 @@ def parse_geonode_csv(csv_text):
                             seen_proxies.add(proxy)
                             proxies.append(proxy)
                             
-                            # Extract extra info
                             protocol = row[protocol_idx].strip('"') if protocol_idx is not None else 'Unknown'
                             country = row[country_idx].strip('"') if country_idx is not None else 'Unknown'
                             anonymity = row[anonymity_idx].strip('"') if anonymity_idx is not None else 'Unknown'
                             
-                            # Save extra info
                             with open(os.path.join(RESULTS_DIR, "proxy_details.txt"), 'a') as f:
                                 f.write(f"{proxy} | {protocol} | {country} | {anonymity}\n")
         
@@ -364,9 +319,7 @@ def parse_geonode_csv(csv_text):
     
     return proxies
 
-# ================= API PARSER (for Geonode API) =================
 def parse_api_json(json_text):
-    """Parse API JSON response for proxies"""
     proxies = []
     try:
         data = json.loads(json_text)
@@ -393,15 +346,19 @@ def parse_api_json(json_text):
     
     return proxies
 
-# ================= SCRAPING FUNCTIONS =================
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+]
+
 def scrape_from_html(url):
-    """Scrape proxies from HTML tables"""
     proxies = []
     try:
         headers = {'User-Agent': random.choice(USER_AGENTS)}
         r = requests.get(url, headers=headers, timeout=10, verify=False)
         if r.status_code == 200:
-            # Special handling for Geonode
             if 'geonode.com' in url:
                 soup = BeautifulSoup(r.text, 'html.parser')
                 for tag in soup.find_all(['textarea', 'pre', 'script']):
@@ -410,7 +367,6 @@ def scrape_from_html(url):
                         geo_proxies = parse_geonode_csv(csv_text)
                         proxies.extend(geo_proxies)
             
-            # Generic HTML parsing
             if not proxies:
                 soup = BeautifulSoup(r.text, 'html.parser')
                 tables = soup.find_all('table')
@@ -430,7 +386,7 @@ def scrape_from_html(url):
                                     ip = text
                                 elif text.isdigit() and 1 <= int(text) <= 65535:
                                     port = text
-                                elif len(text) == 2 and text.isalpha():  # Country code
+                                elif len(text) == 2 and text.isalpha():
                                     country = text
                                 elif 'elite' in text.lower() or 'anonymous' in text.lower():
                                     anonymity = extract_anonymity_from_text(text)
@@ -442,12 +398,10 @@ def scrape_from_html(url):
                                         seen_proxies.add(proxy)
                                         proxies.append(proxy)
                                         
-                                        # Save extra info if available
                                         if country or anonymity:
                                             with open(os.path.join(RESULTS_DIR, "html_proxy_details.txt"), 'a') as f:
                                                 f.write(f"{proxy} | {country or 'Unknown'} | {anonymity or 'Unknown'}\n")
                 
-                # Fallback: regex on whole page
                 if not proxies:
                     ip_ports = re.findall(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})', r.text)
                     for ip, port in ip_ports:
@@ -461,7 +415,6 @@ def scrape_from_html(url):
     return proxies
 
 def scrape_from_raw(url):
-    """Scrape proxies from raw text files"""
     proxies = []
     try:
         headers = {'User-Agent': random.choice(USER_AGENTS)}
@@ -477,7 +430,6 @@ def scrape_from_raw(url):
     return proxies
 
 def scrape_from_api(url):
-    """Scrape proxies from API endpoints"""
     proxies = []
     try:
         headers = {'User-Agent': random.choice(USER_AGENTS)}
@@ -488,16 +440,7 @@ def scrape_from_api(url):
         print(f"{C['error']}      Error scraping {url}: {str(e)[:50]}")
     return proxies
 
-# User agents for rotation
-USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-]
-
 def scrape_proxies():
-    """Main scraping function with duplicate prevention"""
     global scraped_proxies, seen_proxies
     scraped_proxies = []
     seen_proxies.clear()
@@ -518,7 +461,6 @@ def scrape_proxies():
             current += 1
             url = source['url']
             if pages > 1:
-                # Handle pagination
                 if 'page' in url:
                     url = url.replace('page=1', f'page={page}')
                 elif '/page/' in url:
@@ -538,36 +480,31 @@ def scrape_proxies():
             print(f"{C['proxy']}      Found {len(proxies)} new proxies")
             scraped_proxies.extend(proxies)
             
-            # Small delay to avoid rate limiting
             time.sleep(random.uniform(0.5, 1.5))
     
     print(f"\n{C['success']}  ✓ Total unique proxies scraped: {len(scraped_proxies)}")
     
-    # Save scraped proxies
     with open(os.path.join(RESULTS_DIR, "scraped_proxies.txt"), 'w') as f:
         for proxy in scraped_proxies:
             f.write(proxy + '\n')
     
     return scraped_proxies
 
-# ================= DISCORD FILE UPLOAD FUNCTION =================
 def send_discord_file(protocol_type, proxies_list, extra_info=None):
-    """Send proxy list as file to Discord webhook"""
     if not proxies_list:
         return
     
     try:
-        # Create temporary file
         filename = f"{protocol_type}_proxies.txt"
         filepath = os.path.join(RESULTS_DIR, filename)
         
         with open(filepath, 'w') as f:
-            f.write(f"# {len(proxies_list)} {protocol_type.upper()} Proxies\n")
-            f.write(f"# Generated by MR.MYTHIC_KILLER Proxy Tool\n")
-            f.write(f"# {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write(f"{len(proxies_list)} {protocol_type.upper()} Proxies\n")
+            f.write(f"MR.MYTHIC_KILLER Proxy Tool\n")
+            f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             
             if extra_info:
-                f.write("# IP:PORT | COUNTRY | ANONYMITY | SPEED\n")
+                f.write("IP:PORT | COUNTRY | ANONYMITY | SPEED\n")
                 for proxy, info in zip(proxies_list, extra_info):
                     country = info.get('country', 'Unknown')
                     anonymity = info.get('anonymity', 'Unknown')
@@ -577,11 +514,9 @@ def send_discord_file(protocol_type, proxies_list, extra_info=None):
                 for proxy in proxies_list:
                     f.write(proxy + '\n')
         
-        # Send file to Discord
         with open(filepath, 'rb') as f:
             files = {'file': (filename, f, 'text/plain')}
             
-            # Simple message with file
             data = {
                 'content': f"📁 **{len(proxies_list)} {protocol_type.upper()} Proxies Found!**"
             }
@@ -597,7 +532,6 @@ def send_discord_file(protocol_type, proxies_list, extra_info=None):
         print(f"{C['error']}      ↳ Discord upload error: {str(e)[:30]}")
 
 def send_all_proxy_files():
-    """Send all protocol files to Discord with extra details"""
     global valid_proxies
     
     if not valid_proxies:
@@ -608,7 +542,6 @@ def send_all_proxy_files():
     print(f"{C['webhook']}║              UPLOADING PROXIES TO DISCORD                 ║")
     print(f"{C['webhook']}╚════════════════════════════════════════════════════════════╝\n")
     
-    # Group by protocol with extra info
     http_proxies = []
     http_info = []
     socks4_proxies = []
@@ -619,7 +552,7 @@ def send_all_proxy_files():
     for proxy, protocol, speed in valid_proxies:
         ip = proxy.split(':')[0]
         country, country_code = get_ip_info(ip)
-        anonymity = 'Unknown'  # We don't have anonymity from testing
+        anonymity = 'Unknown'
         
         info = {
             'country': country,
@@ -637,10 +570,9 @@ def send_all_proxy_files():
             socks5_proxies.append(proxy)
             socks5_info.append(info)
     
-    # Send each protocol separately with extra info
     if http_proxies:
         send_discord_file('http', http_proxies, http_info)
-        time.sleep(1)  # Rate limiting
+        time.sleep(1)
     
     if socks4_proxies:
         send_discord_file('socks4', socks4_proxies, socks4_info)
@@ -650,16 +582,13 @@ def send_all_proxy_files():
         send_discord_file('socks5', socks5_proxies, socks5_info)
         time.sleep(1)
     
-    # Send all proxies combined (without extra info to save space)
     all_proxies = [p[0] for p in valid_proxies]
     if all_proxies:
         send_discord_file('all_valid', all_proxies)
     
     print(f"{C['success']}  ✓ All proxy files uploaded to Discord!")
 
-# ================= PROXY TESTING FUNCTIONS =================
 def test_proxy_http(proxy, timeout=5):
-    """Test HTTP/HTTPS proxy"""
     try:
         proxies = {
             'http': f'http://{proxy}',
@@ -675,7 +604,6 @@ def test_proxy_http(proxy, timeout=5):
     return False, None, 0
 
 def test_proxy_socks4(proxy, timeout=5):
-    """Test SOCKS4 proxy"""
     try:
         ip, port = proxy.split(':')
         start = time.time()
@@ -694,7 +622,6 @@ def test_proxy_socks4(proxy, timeout=5):
     return False, None, 0
 
 def test_proxy_socks5(proxy, timeout=5):
-    """Test SOCKS5 proxy"""
     try:
         ip, port = proxy.split(':')
         start = time.time()
@@ -713,7 +640,6 @@ def test_proxy_socks5(proxy, timeout=5):
     return False, None, 0
 
 def test_proxy_worker(proxy_type_filter='mix'):
-    """Worker function for testing proxies"""
     global total_tested, total_valid, total_invalid, total_failed, cpm
     
     while not stop_testing and not proxy_queue.empty():
@@ -722,7 +648,6 @@ def test_proxy_worker(proxy_type_filter='mix'):
         except:
             break
         
-        # Test based on filter
         is_valid = False
         protocol = None
         speed = 0
@@ -762,7 +687,6 @@ def test_proxy_worker(proxy_type_filter='mix'):
         proxy_queue.task_done()
 
 def test_proxies(proxies_to_test, proxy_type_filter='mix', threads=50):
-    """Main testing function"""
     global stop_testing, proxy_queue, total_tested, total_valid, total_invalid, total_failed, start_time, valid_proxies
     
     stop_testing = False
@@ -774,7 +698,6 @@ def test_proxies(proxies_to_test, proxy_type_filter='mix', threads=50):
     invalid_proxies.clear()
     start_time = time.time()
     
-    # Fill queue
     for proxy in proxies_to_test:
         proxy_queue.put(proxy)
     
@@ -800,11 +723,9 @@ def test_proxies(proxies_to_test, proxy_type_filter='mix', threads=50):
     print(f"{C['bad']}     Invalid: {total_invalid}")
     print(f"{C['cpm']}     Avg CPM: {int((total_tested/elapsed)*60) if elapsed>0 else 0}")
     
-    # Save results
     if valid_proxies:
         valid_proxies.sort(key=lambda x: x[2])
         
-        # Save by protocol
         http_proxies = [p[0] for p in valid_proxies if p[1] == 'http']
         socks4_proxies = [p[0] for p in valid_proxies if p[1] == 'socks4']
         socks5_proxies = [p[0] for p in valid_proxies if p[1] == 'socks5']
@@ -824,12 +745,10 @@ def test_proxies(proxies_to_test, proxy_type_filter='mix', threads=50):
         
         print(f"{C['success']}  ✓ Saved valid proxies to {RESULTS_DIR}/")
         
-        # Send files to Discord with extra details
         send_all_proxy_files()
     
     return valid_proxies
 
-# ================= MAIN MENU =================
 def main():
     global scraped_proxies, start_time
     
