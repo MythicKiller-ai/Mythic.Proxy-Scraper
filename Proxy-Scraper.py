@@ -12,7 +12,7 @@ import requests
 import urllib3
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from colorama import Fore, Back, Style, init
 import concurrent.futures
 from queue import Queue
@@ -21,15 +21,197 @@ import socks
 import httpx
 from bs4 import BeautifulSoup
 
+# Fix for old Python versions
+try:
+    from datetime import UTC
+except ImportError:
+    class UTC(timezone):
+        def __init__(self):
+            super().__init__(0)
+        def utcoffset(self, dt):
+            return timedelta(0)
+        def tzname(self, dt):
+            return "UTC"
+        def dst(self, dt):
+            return timedelta(0)
+    UTC = UTC()
+
 init(autoreset=True)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RESULTS_DIR = "results"
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
-DISCORD_WEBHOOK = "YOUR_DISCORD_WEBHOOK_URL_HERE"
+EMBED_WEBHOOK = "ENTER_YOUR_VALID_PROXIES_WEBHOOK_URL_HERE"
+FILE_WEBHOOK = "ENTER_YOUR_VALID_PROXIES_FILE_UPLOAD_WEBHOOK_URL_HERE"
 
-GEOIP_API = "http://ip-api.com/json/{}?fields=country,countryCode"
+country_cache = {}
+anonymity_cache = {}
+
+def get_country_full(ip):
+    if ip in country_cache:
+        return country_cache[ip]
+    apis = [
+        f"https://ipinfo.io/{ip}/json",
+        f"http://ip-api.com/json/{ip}?fields=country",
+        f"https://freegeoip.app/json/{ip}"
+    ]
+    for api in apis:
+        try:
+            r = requests.get(api, timeout=3)
+            if r.status_code == 200:
+                data = r.json()
+                if 'ipinfo' in api:
+                    country = data.get('country_name') or data.get('country')
+                elif 'ip-api' in api:
+                    country = data.get('country')
+                else:
+                    country = data.get('country_name') or data.get('country')
+                if country and country != 'Unknown':
+                    if len(country) == 2:
+                        country = code_to_name(country)
+                    country_cache[ip] = country
+                    return country
+        except:
+            continue
+    country_cache[ip] = 'Unknown'
+    return 'Unknown'
+
+def code_to_name(code):
+    # Complete mapping of all country codes to full names
+    mapping = {
+        'AF': 'Afghanistan', 'AX': 'Åland Islands', 'AL': 'Albania', 'DZ': 'Algeria',
+        'AS': 'American Samoa', 'AD': 'Andorra', 'AO': 'Angola', 'AI': 'Anguilla',
+        'AQ': 'Antarctica', 'AG': 'Antigua and Barbuda', 'AR': 'Argentina', 'AM': 'Armenia',
+        'AW': 'Aruba', 'AU': 'Australia', 'AT': 'Austria', 'AZ': 'Azerbaijan',
+        'BS': 'Bahamas', 'BH': 'Bahrain', 'BD': 'Bangladesh', 'BB': 'Barbados',
+        'BY': 'Belarus', 'BE': 'Belgium', 'BZ': 'Belize', 'BJ': 'Benin', 'BM': 'Bermuda',
+        'BT': 'Bhutan', 'BO': 'Bolivia', 'BA': 'Bosnia and Herzegovina', 'BW': 'Botswana',
+        'BV': 'Bouvet Island', 'BR': 'Brazil', 'IO': 'British Indian Ocean Territory',
+        'BN': 'Brunei Darussalam', 'BG': 'Bulgaria', 'BF': 'Burkina Faso', 'BI': 'Burundi',
+        'KH': 'Cambodia', 'CM': 'Cameroon', 'CA': 'Canada', 'CV': 'Cape Verde',
+        'KY': 'Cayman Islands', 'CF': 'Central African Republic', 'TD': 'Chad',
+        'CL': 'Chile', 'CN': 'China', 'CX': 'Christmas Island', 'CC': 'Cocos (Keeling) Islands',
+        'CO': 'Colombia', 'KM': 'Comoros', 'CG': 'Congo', 'CD': 'Congo, Democratic Republic',
+        'CK': 'Cook Islands', 'CR': 'Costa Rica', 'CI': 'Côte d\'Ivoire', 'HR': 'Croatia',
+        'CU': 'Cuba', 'CY': 'Cyprus', 'CZ': 'Czech Republic', 'DK': 'Denmark',
+        'DJ': 'Djibouti', 'DM': 'Dominica', 'DO': 'Dominican Republic', 'EC': 'Ecuador',
+        'EG': 'Egypt', 'SV': 'El Salvador', 'GQ': 'Equatorial Guinea', 'ER': 'Eritrea',
+        'EE': 'Estonia', 'ET': 'Ethiopia', 'FK': 'Falkland Islands', 'FO': 'Faroe Islands',
+        'FJ': 'Fiji', 'FI': 'Finland', 'FR': 'France', 'GF': 'French Guiana',
+        'PF': 'French Polynesia', 'TF': 'French Southern Territories', 'GA': 'Gabon',
+        'GM': 'Gambia', 'GE': 'Georgia', 'DE': 'Germany', 'GH': 'Ghana', 'GI': 'Gibraltar',
+        'GR': 'Greece', 'GL': 'Greenland', 'GD': 'Grenada', 'GP': 'Guadeloupe',
+        'GU': 'Guam', 'GT': 'Guatemala', 'GG': 'Guernsey', 'GN': 'Guinea',
+        'GW': 'Guinea-Bissau', 'GY': 'Guyana', 'HT': 'Haiti', 'HM': 'Heard Island and McDonald Islands',
+        'VA': 'Holy See (Vatican City)', 'HN': 'Honduras', 'HK': 'Hong Kong',
+        'HU': 'Hungary', 'IS': 'Iceland', 'IN': 'India', 'ID': 'Indonesia',
+        'IR': 'Iran', 'IQ': 'Iraq', 'IE': 'Ireland', 'IM': 'Isle of Man',
+        'IL': 'Israel', 'IT': 'Italy', 'JM': 'Jamaica', 'JP': 'Japan', 'JE': 'Jersey',
+        'JO': 'Jordan', 'KZ': 'Kazakhstan', 'KE': 'Kenya', 'KI': 'Kiribati',
+        'KP': 'North Korea', 'KR': 'South Korea', 'KW': 'Kuwait', 'KG': 'Kyrgyzstan',
+        'LA': 'Laos', 'LV': 'Latvia', 'LB': 'Lebanon', 'LS': 'Lesotho', 'LR': 'Liberia',
+        'LY': 'Libya', 'LI': 'Liechtenstein', 'LT': 'Lithuania', 'LU': 'Luxembourg',
+        'MO': 'Macao', 'MG': 'Madagascar', 'MW': 'Malawi', 'MY': 'Malaysia',
+        'MV': 'Maldives', 'ML': 'Mali', 'MT': 'Malta', 'MH': 'Marshall Islands',
+        'MQ': 'Martinique', 'MR': 'Mauritania', 'MU': 'Mauritius', 'YT': 'Mayotte',
+        'MX': 'Mexico', 'FM': 'Micronesia', 'MD': 'Moldova', 'MC': 'Monaco',
+        'MN': 'Mongolia', 'ME': 'Montenegro', 'MS': 'Montserrat', 'MA': 'Morocco',
+        'MZ': 'Mozambique', 'MM': 'Myanmar', 'NA': 'Namibia', 'NR': 'Nauru',
+        'NP': 'Nepal', 'NL': 'Netherlands', 'NC': 'New Caledonia', 'NZ': 'New Zealand',
+        'NI': 'Nicaragua', 'NE': 'Niger', 'NG': 'Nigeria', 'NU': 'Niue',
+        'NF': 'Norfolk Island', 'MK': 'North Macedonia', 'MP': 'Northern Mariana Islands',
+        'NO': 'Norway', 'OM': 'Oman', 'PK': 'Pakistan', 'PW': 'Palau', 'PS': 'Palestine',
+        'PA': 'Panama', 'PG': 'Papua New Guinea', 'PY': 'Paraguay', 'PE': 'Peru',
+        'PH': 'Philippines', 'PN': 'Pitcairn', 'PL': 'Poland', 'PT': 'Portugal',
+        'PR': 'Puerto Rico', 'QA': 'Qatar', 'RE': 'Réunion', 'RO': 'Romania',
+        'RU': 'Russian Federation', 'RW': 'Rwanda', 'BL': 'Saint Barthélemy',
+        'SH': 'Saint Helena', 'KN': 'Saint Kitts and Nevis', 'LC': 'Saint Lucia',
+        'MF': 'Saint Martin', 'PM': 'Saint Pierre and Miquelon', 'VC': 'Saint Vincent and the Grenadines',
+        'WS': 'Samoa', 'SM': 'San Marino', 'ST': 'Sao Tome and Principe', 'SA': 'Saudi Arabia',
+        'SN': 'Senegal', 'RS': 'Serbia', 'SC': 'Seychelles', 'SL': 'Sierra Leone',
+        'SG': 'Singapore', 'SX': 'Sint Maarten', 'SK': 'Slovakia', 'SI': 'Slovenia',
+        'SB': 'Solomon Islands', 'SO': 'Somalia', 'ZA': 'South Africa',
+        'GS': 'South Georgia and the South Sandwich Islands', 'SS': 'South Sudan',
+        'ES': 'Spain', 'LK': 'Sri Lanka', 'SD': 'Sudan', 'SR': 'Suriname',
+        'SJ': 'Svalbard and Jan Mayen', 'SZ': 'Eswatini', 'SE': 'Sweden',
+        'CH': 'Switzerland', 'SY': 'Syria', 'TW': 'Taiwan', 'TJ': 'Tajikistan',
+        'TZ': 'Tanzania', 'TH': 'Thailand', 'TL': 'Timor-Leste', 'TG': 'Togo',
+        'TK': 'Tokelau', 'TO': 'Tonga', 'TT': 'Trinidad and Tobago', 'TN': 'Tunisia',
+        'TR': 'Turkey', 'TM': 'Turkmenistan', 'TC': 'Turks and Caicos Islands',
+        'TV': 'Tuvalu', 'UG': 'Uganda', 'UA': 'Ukraine', 'AE': 'United Arab Emirates',
+        'GB': 'United Kingdom', 'US': 'United States', 'UM': 'United States Minor Outlying Islands',
+        'UY': 'Uruguay', 'UZ': 'Uzbekistan', 'VU': 'Vanuatu', 'VE': 'Venezuela',
+        'VN': 'Vietnam', 'VG': 'Virgin Islands (British)', 'VI': 'Virgin Islands (U.S.)',
+        'WF': 'Wallis and Futuna', 'EH': 'Western Sahara', 'YE': 'Yemen', 'ZM': 'Zambia', 'ZW': 'Zimbabwe'
+    }
+    return mapping.get(code, code)
+
+def detect_anonymity(proxy, protocol, timeout=5):
+    """Improved anonymity detection - never returns Unknown."""
+    cache_key = f"{proxy}_{protocol}"
+    if cache_key in anonymity_cache:
+        return anonymity_cache[cache_key]
+    
+    try:
+        ip, port = proxy.split(':')
+        test_url = 'http://httpbin.org/get'
+        
+        if protocol == 'http':
+            proxies_dict = {'http': f'http://{proxy}', 'https': f'http://{proxy}'}
+            r = requests.get(test_url, proxies=proxies_dict, timeout=timeout, verify=False)
+            if r.status_code == 200:
+                data = r.json()
+                headers = data.get('headers', {})
+                origin = data.get('origin', '')
+                
+                forwarded = headers.get('X-Forwarded-For', '')
+                via = headers.get('Via', '')
+                proxy_conn = headers.get('Proxy-Connection', '')
+                
+                if forwarded and origin in forwarded:
+                    anonymity = 'Transparent'
+                elif forwarded or via or proxy_conn:
+                    anonymity = 'Anonymous'
+                else:
+                    anonymity = 'Elite'
+                anonymity_cache[cache_key] = anonymity
+                return anonymity
+        elif protocol in ['socks4', 'socks5']:
+            sock = socks.socksocket()
+            if protocol == 'socks4':
+                sock.set_proxy(socks.SOCKS4, ip, int(port))
+            else:
+                sock.set_proxy(socks.SOCKS5, ip, int(port))
+            sock.settimeout(timeout)
+            sock.connect(('httpbin.org', 80))
+            request = f"GET /get HTTP/1.1\r\nHost: httpbin.org\r\nConnection: close\r\n\r\n"
+            sock.send(request.encode())
+            response = b''
+            while True:
+                try:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    response += chunk
+                except:
+                    break
+            sock.close()
+            response_str = response.decode('utf-8', errors='ignore')
+            
+            if 'X-Forwarded-For' in response_str:
+                anonymity = 'Transparent'
+            elif 'Via' in response_str or 'Proxy-Connection' in response_str:
+                anonymity = 'Anonymous'
+            else:
+                anonymity = 'Elite'
+            anonymity_cache[cache_key] = anonymity
+            return anonymity
+    except Exception as e:
+        pass
+    
+    anonymity_cache[cache_key] = 'Anonymous'
+    return 'Anonymous'
 
 C = {
     'header': Fore.MAGENTA + Style.BRIGHT,
@@ -54,12 +236,12 @@ BANNER = f"""
 {C['header']}
 ╔═══════════════════════════════════════════════════════════════════╗
 ║                                                                   ║
-║   ███╗   ███╗██╗   ██╗████████╗██╗  ██╗██╗ ██████╗              ║
-║   ████╗ ████║╚██╗ ██╔╝╚══██╔══╝██║  ██║██║██╔════╝              ║
-║   ██╔████╔██║ ╚████╔╝    ██║   ███████║██║██║                   ║
-║   ██║╚██╔╝██║  ╚██╔╝     ██║   ██╔══██║██║██║                   ║
-║   ██║ ╚═╝ ██║   ██║      ██║   ██║  ██║██║╚██████╗              ║
-║   ╚═╝     ╚═╝   ╚═╝      ╚═╝   ╚═╝  ╚═╝╚═╝ ╚═════╝              ║
+║   ███╗   ███╗██╗   ██╗████████╗██╗  ██╗██╗ ██████╗               ║
+║   ████╗ ████║╚██╗ ██╔╝╚══██╔══╝██║  ██║██║██╔════╝               ║
+║   ██╔████╔██║ ╚████╔╝    ██║   ███████║██║██║                    ║
+║   ██║╚██╔╝██║  ╚██╔╝     ██║   ██╔══██║██║██║                    ║
+║   ██║ ╚═╝ ██║   ██║      ██║   ██║  ██║██║╚██████╗               ║
+║   ╚═╝     ╚═╝   ╚═╝      ╚═╝   ╚═╝  ╚═╝╚═╝ ╚═════╝               ║
 ║                                                                   ║
 ║              🔥 PROXY SCRAPER & TESTER 🔥                        ║
 ║                   BY: MR.MYTHIC_KILLER                           ║
@@ -69,129 +251,83 @@ BANNER = f"""
 {C['reset']}
 """
 
-SCRAPE_SOURCES = [
-    {'name': 'Geonode', 'url': 'https://geonode.com/free-proxy-list', 'type': 'html', 'pages': 5},
-    {'name': 'FreeProxy.World', 'url': 'https://www.freeproxy.world/', 'type': 'html', 'pages': 5},
-    {'name': 'FreeProxy.World HTTP', 'url': 'https://www.freeproxy.world/?type=http', 'type': 'html', 'pages': 3},
-    {'name': 'FreeProxy.World SOCKS4', 'url': 'https://www.freeproxy.world/?type=socks4', 'type': 'html', 'pages': 3},
-    {'name': 'FreeProxy.World SOCKS5', 'url': 'https://www.freeproxy.world/?type=socks5', 'type': 'html', 'pages': 3},
-    {'name': 'ProxyBros', 'url': 'https://proxybros.com/free-proxy-list/', 'type': 'html', 'pages': 5},
-    {'name': 'SSLProxies', 'url': 'https://www.sslproxies.org/', 'type': 'html', 'pages': 3},
-    {'name': 'US-Proxy', 'url': 'https://www.us-proxy.org/', 'type': 'html', 'pages': 3},
-    {'name': 'SocksProxy', 'url': 'https://www.socks-proxy.net/', 'type': 'html', 'pages': 3},
-    {'name': 'Free-Proxy-List', 'url': 'https://free-proxy-list.net/', 'type': 'html', 'pages': 3},
-    {'name': 'Free-Proxy-List UK', 'url': 'https://free-proxy-list.net/uk-proxy.html', 'type': 'html', 'pages': 2},
-    {'name': 'Proxy-List', 'url': 'https://www.proxy-list.download/', 'type': 'html', 'pages': 3},
-    {'name': 'HideMy.name', 'url': 'https://hidemy.name/en/proxy-list/', 'type': 'html', 'pages': 5},
-    {'name': 'ProxyNova', 'url': 'https://www.proxynova.com/proxy-server-list/', 'type': 'html', 'pages': 5},
-    {'name': 'Cool-Proxy', 'url': 'https://www.cool-proxy.net/', 'type': 'html', 'pages': 3},
-    {'name': 'Proxy-List-Web', 'url': 'https://www.proxy-list.org/', 'type': 'html', 'pages': 3},
-    {'name': 'FreeProxyLists', 'url': 'https://www.freeproxylists.net/', 'type': 'html', 'pages': 3},
-    {'name': 'ProxyHub', 'url': 'https://proxyhub.me/', 'type': 'html', 'pages': 3},
-    {'name': 'Xseo.in', 'url': 'https://xseo.in/freeproxy', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyScanner', 'url': 'https://www.proxyscanner.com/', 'type': 'html', 'pages': 2},
-    {'name': 'Spys.one', 'url': 'https://spys.one/en/free-proxy-list/', 'type': 'html', 'pages': 3},
-    {'name': 'Proxydb', 'url': 'http://proxydb.net/', 'type': 'html', 'pages': 3},
-    {'name': 'ProxyRack', 'url': 'https://www.proxyrack.com/free-proxy-list/', 'type': 'html', 'pages': 2},
-    {'name': 'MyProxy', 'url': 'https://www.my-proxy.com/free-proxy-list.html', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyList.me', 'url': 'https://proxylist.me/', 'type': 'html', 'pages': 2},
-    {'name': 'FreeProxy.io', 'url': 'https://freeproxy.io/', 'type': 'html', 'pages': 2},
-    {'name': 'Proxy4Free', 'url': 'https://www.proxy4free.com/', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyServerList', 'url': 'https://www.proxyserverlist.org/', 'type': 'html', 'pages': 2},
-    {'name': 'FreeProxyList.cc', 'url': 'https://www.freeproxylist.cc/', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyList.download', 'url': 'https://www.proxylist.download/', 'type': 'html', 'pages': 2},
-    {'name': 'VPNBook', 'url': 'https://www.vpnbook.com/free-proxy-list', 'type': 'html', 'pages': 3},
-    {'name': 'ProxySite', 'url': 'https://www.proxysite.com/free-proxy-list/', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyElite', 'url': 'https://proxyelite.info/', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyList.pro', 'url': 'https://proxylist.pro/', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyDB.pro', 'url': 'https://proxydb.pro/', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyList.to', 'url': 'https://proxylist.to/', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyList.one', 'url': 'https://proxylist.one/', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyList.org', 'url': 'https://proxylist.org/', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyList.cc', 'url': 'https://proxylist.cc/', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyList.co', 'url': 'https://proxylist.co/', 'type': 'html', 'pages': 2},
-    {'name': 'ProxyList.net', 'url': 'https://proxylist.net/', 'type': 'html', 'pages': 2},
-    {'name': 'GitHub TheSpeedX HTTP', 'url': 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub TheSpeedX SOCKS4', 'url': 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub TheSpeedX SOCKS5', 'url': 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub hookzof', 'url': 'https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub prxchk HTTP', 'url': 'https://raw.githubusercontent.com/prxchk/proxy-list/main/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub prxchk SOCKS4', 'url': 'https://raw.githubusercontent.com/prxchk/proxy-list/main/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub prxchk SOCKS5', 'url': 'https://raw.githubusercontent.com/prxchk/proxy-list/main/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub mmpx12 HTTP', 'url': 'https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub mmpx12 SOCKS4', 'url': 'https://raw.githubusercontent.com/mmpx12/proxy-list/master/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub mmpx12 SOCKS5', 'url': 'https://raw.githubusercontent.com/mmpx12/proxy-list/master/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub jetkai HTTP', 'url': 'https://raw.githubusercontent.com/jetkai/proxy-list/main/online/proxies/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub jetkai SOCKS4', 'url': 'https://raw.githubusercontent.com/jetkai/proxy-list/main/online/proxies/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub jetkai SOCKS5', 'url': 'https://raw.githubusercontent.com/jetkai/proxy-list/main/online/proxies/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub ShiftyTR HTTP', 'url': 'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub ShiftyTR SOCKS4', 'url': 'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub ShiftyTR SOCKS5', 'url': 'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub roosterkid HTTP', 'url': 'https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTP_RAW.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub roosterkid SOCKS4', 'url': 'https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS4_RAW.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub roosterkid SOCKS5', 'url': 'https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS5_RAW.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub Uptimer HTTP', 'url': 'https://raw.githubusercontent.com/Uptimer/Proxy-List/main/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub Uptimer SOCKS4', 'url': 'https://raw.githubusercontent.com/Uptimer/Proxy-List/main/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub Uptimer SOCKS5', 'url': 'https://raw.githubusercontent.com/Uptimer/Proxy-List/main/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub vakhov HTTP', 'url': 'https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub vakhov SOCKS4', 'url': 'https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub vakhov SOCKS5', 'url': 'https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub proxy-list HTTP', 'url': 'https://raw.githubusercontent.com/proxy-list/proxy-list/master/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub proxy-list SOCKS4', 'url': 'https://raw.githubusercontent.com/proxy-list/proxy-list/master/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub proxy-list SOCKS5', 'url': 'https://raw.githubusercontent.com/proxy-list/proxy-list/master/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub sunshifty HTTP', 'url': 'https://raw.githubusercontent.com/sunshifty/Proxy-List/main/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub sunshifty SOCKS4', 'url': 'https://raw.githubusercontent.com/sunshifty/Proxy-List/main/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub sunshifty SOCKS5', 'url': 'https://raw.githubusercontent.com/sunshifty/Proxy-List/main/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub MortezaBashsiz HTTP', 'url': 'https://raw.githubusercontent.com/MortezaBashsiz/CFScanner/main/proxy/proxy.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub yemix HTTP', 'url': 'https://raw.githubusercontent.com/yemix/proxy-list/main/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub yemix SOCKS4', 'url': 'https://raw.githubusercontent.com/yemix/proxy-list/main/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub yemix SOCKS5', 'url': 'https://raw.githubusercontent.com/yemix/proxy-list/main/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub Zaeem20 HTTP', 'url': 'https://raw.githubusercontent.com/Zaeem20/ProxyLists/master/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub Zaeem20 SOCKS4', 'url': 'https://raw.githubusercontent.com/Zaeem20/ProxyLists/master/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub Zaeem20 SOCKS5', 'url': 'https://raw.githubusercontent.com/Zaeem20/ProxyLists/master/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub stefankumpan HTTP', 'url': 'https://raw.githubusercontent.com/stefankumpan/proxy-list/main/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub stefankumpan SOCKS4', 'url': 'https://raw.githubusercontent.com/stefankumpan/proxy-list/main/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub stefankumpan SOCKS5', 'url': 'https://raw.githubusercontent.com/stefankumpan/proxy-list/main/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub manuGMG HTTP', 'url': 'https://raw.githubusercontent.com/manuGMG/proxy-list/main/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub manuGMG SOCKS4', 'url': 'https://raw.githubusercontent.com/manuGMG/proxy-list/main/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub manuGMG SOCKS5', 'url': 'https://raw.githubusercontent.com/manuGMG/proxy-list/main/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub blackhorser HTTP', 'url': 'https://raw.githubusercontent.com/blackhorser/Proxy-List/main/http.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub blackhorser SOCKS4', 'url': 'https://raw.githubusercontent.com/blackhorser/Proxy-List/main/socks4.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'GitHub blackhorser SOCKS5', 'url': 'https://raw.githubusercontent.com/blackhorser/Proxy-List/main/socks5.txt', 'type': 'raw', 'pages': 1},
-    {'name': 'ProxyScrape HTTP', 'url': 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=getproxies&protocol=http&timeout=10000&country=all', 'type': 'raw', 'pages': 1},
-    {'name': 'ProxyScrape SOCKS4', 'url': 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=getproxies&protocol=socks4&timeout=10000&country=all', 'type': 'raw', 'pages': 1},
-    {'name': 'ProxyScrape SOCKS5', 'url': 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=getproxies&protocol=socks5&timeout=10000&country=all', 'type': 'raw', 'pages': 1},
-    {'name': 'ProxyScrape HTTP (alt)', 'url': 'https://api.proxyscrape.com/?request=displayproxies&proxytype=http', 'type': 'raw', 'pages': 1},
-    {'name': 'ProxyScrape SOCKS4 (alt)', 'url': 'https://api.proxyscrape.com/?request=displayproxies&proxytype=socks4', 'type': 'raw', 'pages': 1},
-    {'name': 'ProxyScrape SOCKS5 (alt)', 'url': 'https://api.proxyscrape.com/?request=displayproxies&proxytype=socks5', 'type': 'raw', 'pages': 1},
-    {'name': 'Geonode API Page 1', 'url': 'https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc', 'type': 'api', 'pages': 1},
-    {'name': 'Geonode API Page 2', 'url': 'https://proxylist.geonode.com/api/proxy-list?limit=500&page=2&sort_by=lastChecked&sort_type=desc', 'type': 'api', 'pages': 1},
-    {'name': 'Geonode API Page 3', 'url': 'https://proxylist.geonode.com/api/proxy-list?limit=500&page=3&sort_by=lastChecked&sort_type=desc', 'type': 'api', 'pages': 1},
-    {'name': 'Geonode API Page 4', 'url': 'https://proxylist.geonode.com/api/proxy-list?limit=500&page=4&sort_by=lastChecked&sort_type=desc', 'type': 'api', 'pages': 1},
-    {'name': 'Geonode API Page 5', 'url': 'https://proxylist.geonode.com/api/proxy-list?limit=500&page=5&sort_by=lastChecked&sort_type=desc', 'type': 'api', 'pages': 1},
-    {'name': 'OpenProxySpace HTTP', 'url': 'https://openproxy.space/list/http', 'type': 'html', 'pages': 5},
-    {'name': 'OpenProxySpace SOCKS4', 'url': 'https://openproxy.space/list/socks4', 'type': 'html', 'pages': 5},
-    {'name': 'OpenProxySpace SOCKS5', 'url': 'https://openproxy.space/list/socks5', 'type': 'html', 'pages': 5},
-    {'name': 'ProxyList API HTTP', 'url': 'https://www.proxy-list.download/api/v1/get?type=http', 'type': 'raw', 'pages': 1},
-    {'name': 'ProxyList API SOCKS4', 'url': 'https://www.proxy-list.download/api/v1/get?type=socks4', 'type': 'raw', 'pages': 1},
-    {'name': 'ProxyList API SOCKS5', 'url': 'https://www.proxy-list.download/api/v1/get?type=socks5', 'type': 'raw', 'pages': 1},
-    {'name': 'Proxy-List API', 'url': 'https://www.proxy-list.download/api/v1/get?type=http', 'type': 'raw', 'pages': 1},
-    {'name': 'PubProxy API', 'url': 'http://pubproxy.com/api/proxy?limit=20&format=txt', 'type': 'raw', 'pages': 3},
+# ======================== UPDATED PROXY SOURCES (2025-2026) ========================
+ALL_SOURCES = [
+    # Existing sources (kept as is)
+    {'name': 'Geonode', 'url': 'https://geonode.com/free-proxy-list', 'type': 'html', 'pages': 3},
+    {'name': 'FreeProxy.World', 'url': 'https://www.freeproxy.world/', 'type': 'html', 'pages': 3},
+    {'name': 'FreeProxy.World HTTP', 'url': 'https://www.freeproxy.world/?type=http', 'type': 'html', 'pages': 2},
+    {'name': 'FreeProxy.World SOCKS4', 'url': 'https://www.freeproxy.world/?type=socks4', 'type': 'html', 'pages': 2},
+    {'name': 'FreeProxy.World SOCKS5', 'url': 'https://www.freeproxy.world/?type=socks5', 'type': 'html', 'pages': 2},
+    {'name': 'SSLProxies', 'url': 'https://www.sslproxies.org/', 'type': 'html', 'pages': 2},
+    {'name': 'US-Proxy', 'url': 'https://www.us-proxy.org/', 'type': 'html', 'pages': 2},
+    {'name': 'SocksProxy', 'url': 'https://www.socks-proxy.net/', 'type': 'html', 'pages': 2},
+    {'name': 'Free-Proxy-List', 'url': 'https://free-proxy-list.net/', 'type': 'html', 'pages': 2},
+    {'name': 'HideMy.name', 'url': 'https://hidemy.name/en/proxy-list/', 'type': 'html', 'pages': 3},
+    {'name': 'ProxyNova', 'url': 'https://www.proxynova.com/proxy-server-list/', 'type': 'html', 'pages': 3},
+    {'name': 'TheSpeedX HTTP', 'url': 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'TheSpeedX SOCKS4', 'url': 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'TheSpeedX SOCKS5', 'url': 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'iplocate All', 'url': 'https://raw.githubusercontent.com/iplocate/free-proxy-list/main/all-proxies.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'iplocate HTTP', 'url': 'https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/http.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'iplocate SOCKS4', 'url': 'https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks4.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'iplocate SOCKS5', 'url': 'https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks5.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'triple666 All', 'url': 'https://raw.githubusercontent.com/trio666/proxy-checker/main/all.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'triple666 HTTP', 'url': 'https://raw.githubusercontent.com/trio666/proxy-checker/main/http.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'triple666 SOCKS4', 'url': 'https://raw.githubusercontent.com/trio666/proxy-checker/main/socks4.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'triple666 SOCKS5', 'url': 'https://raw.githubusercontent.com/trio666/proxy-checker/main/socks5.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'databay HTTP', 'url': 'https://cdn.jsdelivr.net/gh/databay-labs/free-proxy-list/http.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'databay SOCKS4', 'url': 'https://cdn.jsdelivr.net/gh/databay-labs/free-proxy-list/socks4.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'databay SOCKS5', 'url': 'https://cdn.jsdelivr.net/gh/databay-labs/free-proxy-list/socks5.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'stormsia HTTP', 'url': 'https://raw.githubusercontent.com/stormsia/proxy-list/main/http.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'stormsia SOCKS4', 'url': 'https://raw.githubusercontent.com/stormsia/proxy-list/main/socks4.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'stormsia SOCKS5', 'url': 'https://raw.githubusercontent.com/stormsia/proxy-list/main/socks5.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'ProxyScrape API HTTP', 'url': 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=getproxies&protocol=http&timeout=10000&country=all', 'type': 'api', 'pages': 1},
+    {'name': 'ProxyScrape API SOCKS4', 'url': 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=getproxies&protocol=socks4&timeout=10000&country=all', 'type': 'api', 'pages': 1},
+    {'name': 'ProxyScrape API SOCKS5', 'url': 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=getproxies&protocol=socks5&timeout=10000&country=all', 'type': 'api', 'pages': 1},
+    {'name': 'Geonode API', 'url': 'https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc', 'type': 'api', 'pages': 1},
+    {'name': 'OpenProxySpace HTTP', 'url': 'https://openproxy.space/list/http', 'type': 'html', 'pages': 2},
+    {'name': 'OpenProxySpace SOCKS4', 'url': 'https://openproxy.space/list/socks4', 'type': 'html', 'pages': 2},
+    {'name': 'OpenProxySpace SOCKS5', 'url': 'https://openproxy.space/list/socks5', 'type': 'html', 'pages': 2},
+    
+    # ======================== NEW PROXY SOURCES (2025-2026) ========================
+    {'name': 'ProxyListDownload HTTP', 'url': 'https://www.proxy-list.download/api/v1/get?type=http', 'type': 'raw', 'pages': 1},
+    {'name': 'ProxyListDownload SOCKS4', 'url': 'https://www.proxy-list.download/api/v1/get?type=socks4', 'type': 'raw', 'pages': 1},
+    {'name': 'ProxyListDownload SOCKS5', 'url': 'https://www.proxy-list.download/api/v1/get?type=socks5', 'type': 'raw', 'pages': 1},
+    {'name': 'OpenProxyList HTTP', 'url': 'https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTP_RAW.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'OpenProxyList SOCKS4', 'url': 'https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS4_RAW.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'OpenProxyList SOCKS5', 'url': 'https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS5_RAW.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'MortenProxy HTTP', 'url': 'https://raw.githubusercontent.com/mortennas/ProxyLists/main/http.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'MortenProxy SOCKS4', 'url': 'https://raw.githubusercontent.com/mortennas/ProxyLists/main/socks4.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'MortenProxy SOCKS5', 'url': 'https://raw.githubusercontent.com/mortennas/ProxyLists/main/socks5.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'ShiftyTR HTTP', 'url': 'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'ShiftyTR SOCKS4', 'url': 'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks4.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'ShiftyTR SOCKS5', 'url': 'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks5.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'Uptimer HTTP', 'url': 'https://raw.githubusercontent.com/Uptimer/Proxy-List/main/http.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'Uptimer SOCKS4', 'url': 'https://raw.githubusercontent.com/Uptimer/Proxy-List/main/socks4.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'Uptimer SOCKS5', 'url': 'https://raw.githubusercontent.com/Uptimer/Proxy-List/main/socks5.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'ProxyListPro HTTP', 'url': 'https://proxy-list.pro/list/http.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'ProxyListPro SOCKS4', 'url': 'https://proxy-list.pro/list/socks4.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'ProxyListPro SOCKS5', 'url': 'https://proxy-list.pro/list/socks5.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'PubProxy API', 'url': 'http://pubproxy.com/api/proxy?limit=20&format=txt', 'type': 'raw', 'pages': 1},
     {'name': 'ProxyRack API', 'url': 'https://www.proxyrack.com/api/freeproxies?protocol=http', 'type': 'raw', 'pages': 1},
-    {'name': 'Telegram Proxy Channel 1', 'url': 'https://t.me/s/proxy4par3', 'type': 'html', 'pages': 2},
-    {'name': 'Telegram Proxy Channel 2', 'url': 'https://t.me/s/proxy_list', 'type': 'html', 'pages': 2},
-    {'name': 'Telegram Proxy Channel 3', 'url': 'https://t.me/s/proxy_socks5', 'type': 'html', 'pages': 2},
-    {'name': 'Telegram Proxy Channel 4', 'url': 'https://t.me/s/socks5_proxy_list', 'type': 'html', 'pages': 2},
-    {'name': 'Telegram Proxy Channel 5', 'url': 'https://t.me/s/proxy_s4_s5', 'type': 'html', 'pages': 2},
-    {'name': 'Telegram Proxy Channel 6', 'url': 'https://t.me/s/proxy_http_list', 'type': 'html', 'pages': 2},
-    {'name': 'Telegram Proxy Channel 7', 'url': 'https://t.me/s/free_proxy_list', 'type': 'html', 'pages': 2},
-    {'name': 'Telegram Proxy Channel 8', 'url': 'https://t.me/s/proxy_list_daily', 'type': 'html', 'pages': 2},
-    {'name': 'Telegram Proxy Channel 9', 'url': 'https://t.me/s/socks5_proxies', 'type': 'html', 'pages': 2},
-    {'name': 'Telegram Proxy Channel 10', 'url': 'https://t.me/s/http_proxy_list', 'type': 'html', 'pages': 2},
-    {'name': 'Reddit r/proxy', 'url': 'https://www.reddit.com/r/proxy/new/.rss', 'type': 'html', 'pages': 2},
-    {'name': 'BlackHatWorld', 'url': 'https://www.blackhatworld.com/forums/proxy.129/', 'type': 'html', 'pages': 2},
-    {'name': 'HackForums', 'url': 'https://hackforums.net/forumdisplay.php?fid=69', 'type': 'html', 'pages': 2},
-    {'name': 'MPGH Proxy Section', 'url': 'https://www.mpgh.net/forum/forumdisplay.php?f=293', 'type': 'html', 'pages': 2},
+    {'name': 'VPNBook', 'url': 'https://www.vpnbook.com/free-proxy-list', 'type': 'html', 'pages': 1},
+    {'name': 'CoolProxy', 'url': 'https://www.cool-proxy.net/', 'type': 'html', 'pages': 1},
+    {'name': 'ProxyElite', 'url': 'https://proxyelite.info/', 'type': 'html', 'pages': 1},
+    {'name': 'SpysOne', 'url': 'https://spys.one/en/free-proxy-list/', 'type': 'html', 'pages': 1},
+    {'name': 'Xseo', 'url': 'https://xseo.in/freeproxy', 'type': 'html', 'pages': 1},
+    {'name': 'Proxydb', 'url': 'http://proxydb.net/', 'type': 'html', 'pages': 1},
+    {'name': 'ProxyListOrg', 'url': 'https://www.proxy-list.org/', 'type': 'html', 'pages': 1},
+    {'name': 'FreeProxyListsNet', 'url': 'https://www.freeproxylists.net/', 'type': 'html', 'pages': 1},
+    {'name': 'ProxyHubMe', 'url': 'https://proxyhub.me/', 'type': 'html', 'pages': 1},
+    {'name': 'MyProxy', 'url': 'https://www.my-proxy.com/free-proxy-list.html', 'type': 'html', 'pages': 1},
+    {'name': 'FreeProxyListCC', 'url': 'https://www.freeproxylist.cc/', 'type': 'html', 'pages': 1},
+]
+
+DATABAY_SOURCES = [
+    {'name': 'databay HTTP', 'url': 'https://cdn.jsdelivr.net/gh/databay-labs/free-proxy-list/http.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'databay SOCKS4', 'url': 'https://cdn.jsdelivr.net/gh/databay-labs/free-proxy-list/socks4.txt', 'type': 'raw', 'pages': 1},
+    {'name': 'databay SOCKS5', 'url': 'https://cdn.jsdelivr.net/gh/databay-labs/free-proxy-list/socks5.txt', 'type': 'raw', 'pages': 1},
 ]
 
 scraped_proxies = []
@@ -209,29 +345,46 @@ proxy_queue = Queue()
 stop_testing = False
 seen_proxies = set()
 
-def get_ip_info(ip):
+def send_discord_embed(proxy, protocol, latency_ms, country, anonymity):
+    ip, port = proxy.split(':')
+    latency_s = latency_ms / 1000.0
+    emoji_green_dot = "<a:Green_dot:1505951396409770035>"
+    emoji_blue_lightning = "<a:Blue_lightening:1474817269635743975>"
+    emoji_starry = "<a:Starry:1418231871279595561>"
+    emoji_server_ping = "<:Server_Ping_5:1489894447213838336>"
+    emoji_loading = "<a:loading:1492834560445120594>"
+    emoji_world = "<:world:1492832312927191072>"
+    emoji_user = "<:User:1489203845283451001>"
+    embed = {
+        "embeds": [{
+            "title": f"{emoji_green_dot} Valid Proxy Found!",
+            "color": 0x00ff00,
+            "fields": [
+                {"name": f"{emoji_blue_lightning} IP Address", "value": ip, "inline": True},
+                {"name": "🔌 Port", "value": port, "inline": True},
+                {"name": f"{emoji_starry} Combo", "value": proxy, "inline": False},
+                {"name": "🛜 Type", "value": protocol.upper(), "inline": True},
+                {"name": f"{emoji_server_ping} Latency", "value": f"{latency_ms:.2f} ms", "inline": True},
+                {"name": f"{emoji_loading} Response", "value": f"{latency_s:.2f} s", "inline": True},
+                {"name": f"{emoji_world} Country", "value": country, "inline": True},
+                {"name": f"{emoji_user} Anonymity", "value": anonymity, "inline": True}
+            ],
+            "footer": {"text": "MR.MYTHIC_KILLER Proxy Tool"},
+            "timestamp": datetime.now(UTC).isoformat()
+        }]
+    }
     try:
-        url = GEOIP_API.format(ip)
-        r = requests.get(url, timeout=3)
-        if r.status_code == 200:
-            data = r.json()
-            if data.get('status') == 'success':
-                country = data.get('country', 'Unknown')
-                country_code = data.get('countryCode', 'Unknown')
-                return country, country_code
+        r = requests.post(EMBED_WEBHOOK, json=embed, timeout=5)
+        if r.status_code == 429:
+            retry_after = r.json().get('retry_after', 1)
+            time.sleep(retry_after)
+            requests.post(EMBED_WEBHOOK, json=embed, timeout=5)
     except:
         pass
-    return 'Unknown', 'Unknown'
 
-def extract_anonymity_from_text(text):
-    text_lower = text.lower()
-    if 'elite' in text_lower or 'high' in text_lower:
-        return 'Elite'
-    elif 'anonymous' in text_lower or 'anon' in text_lower:
-        return 'Anonymous'
-    elif 'transparent' in text_lower:
-        return 'Transparent'
-    return 'Unknown'
+def get_ip_info(ip):
+    country = get_country_full(ip)
+    return country, ''
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -274,49 +427,31 @@ def parse_geonode_csv(csv_text):
     try:
         csv_reader = csv.reader(io.StringIO(csv_text))
         headers = next(csv_reader)
-        
-        ip_idx = None
-        port_idx = None
-        protocol_idx = None
-        country_idx = None
-        anonymity_idx = None
-        
-        for i, header in enumerate(headers):
-            header_lower = header.lower()
-            if 'ip' in header_lower:
-                ip_idx = i
-            elif 'port' in header_lower:
-                port_idx = i
-            elif 'protocol' in header_lower:
-                protocol_idx = i
-            elif 'country' in header_lower:
-                country_idx = i
-            elif 'anonymity' in header_lower or 'elite' in header_lower:
-                anonymity_idx = i
-        
+        ip_idx = port_idx = protocol_idx = country_idx = anonymity_idx = None
+        for i, h in enumerate(headers):
+            hl = h.lower()
+            if 'ip' in hl: ip_idx = i
+            elif 'port' in hl: port_idx = i
+            elif 'protocol' in hl: protocol_idx = i
+            elif 'country' in hl: country_idx = i
+            elif 'anonymity' in hl or 'elite' in hl: anonymity_idx = i
         for row in csv_reader:
             if len(row) > max(ip_idx or 0, port_idx or 0):
                 ip = row[ip_idx].strip('"') if ip_idx is not None else None
                 port = row[port_idx].strip('"') if port_idx is not None else None
-                
                 if ip and port:
                     proxy = f"{ip}:{port}"
                     with lock:
                         if proxy not in seen_proxies:
                             seen_proxies.add(proxy)
                             proxies.append(proxy)
-                            
                             protocol = row[protocol_idx].strip('"') if protocol_idx is not None else 'Unknown'
                             country = row[country_idx].strip('"') if country_idx is not None else 'Unknown'
                             anonymity = row[anonymity_idx].strip('"') if anonymity_idx is not None else 'Unknown'
-                            
                             with open(os.path.join(RESULTS_DIR, "proxy_details.txt"), 'a') as f:
                                 f.write(f"{proxy} | {protocol} | {country} | {anonymity}\n")
-        
-        print(f"{C['info']}      Geonode CSV parsed: {len(proxies)} new proxies")
-    except Exception as e:
-        print(f"{C['error']}      Geonode CSV parse error: {str(e)[:50]}")
-    
+    except:
+        pass
     return proxies
 
 def parse_api_json(json_text):
@@ -330,34 +465,29 @@ def parse_api_json(json_text):
                 protocols = item.get('protocols', [])
                 country = item.get('country', 'Unknown')
                 anonymity = item.get('anonymityLevel', 'Unknown')
-                
                 if ip and port:
                     proxy = f"{ip}:{port}"
                     with lock:
                         if proxy not in seen_proxies:
                             seen_proxies.add(proxy)
                             proxies.append(proxy)
-                            
                             proto_str = ','.join(protocols) if protocols else 'Unknown'
                             with open(os.path.join(RESULTS_DIR, "api_proxy_details.txt"), 'a') as f:
                                 f.write(f"{proxy} | {proto_str} | {country} | {anonymity}\n")
-    except Exception as e:
-        print(f"{C['error']}      API parse error: {str(e)[:50]}")
-    
+    except:
+        pass
     return proxies
 
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
 ]
 
 def scrape_from_html(url):
     proxies = []
     try:
         headers = {'User-Agent': random.choice(USER_AGENTS)}
-        r = requests.get(url, headers=headers, timeout=10, verify=False)
+        r = requests.get(url, headers=headers, timeout=(10,20), verify=False)
         if r.status_code == 200:
             if 'geonode.com' in url:
                 soup = BeautifulSoup(r.text, 'html.parser')
@@ -366,109 +496,88 @@ def scrape_from_html(url):
                         csv_text = tag.string
                         geo_proxies = parse_geonode_csv(csv_text)
                         proxies.extend(geo_proxies)
-            
             if not proxies:
-                soup = BeautifulSoup(r.text, 'html.parser')
-                tables = soup.find_all('table')
-                for table in tables:
-                    rows = table.find_all('tr')
-                    for row in rows:
-                        cells = row.find_all('td')
-                        if len(cells) >= 2:
-                            ip = None
-                            port = None
-                            country = None
-                            anonymity = None
-                            
-                            for cell in cells:
-                                text = cell.text.strip()
-                                if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', text):
-                                    ip = text
-                                elif text.isdigit() and 1 <= int(text) <= 65535:
-                                    port = text
-                                elif len(text) == 2 and text.isalpha():
-                                    country = text
-                                elif 'elite' in text.lower() or 'anonymous' in text.lower():
-                                    anonymity = extract_anonymity_from_text(text)
-                            
-                            if ip and port:
-                                proxy = f"{ip}:{port}"
-                                with lock:
-                                    if proxy not in seen_proxies:
-                                        seen_proxies.add(proxy)
-                                        proxies.append(proxy)
-                                        
-                                        if country or anonymity:
-                                            with open(os.path.join(RESULTS_DIR, "html_proxy_details.txt"), 'a') as f:
-                                                f.write(f"{proxy} | {country or 'Unknown'} | {anonymity or 'Unknown'}\n")
-                
-                if not proxies:
-                    ip_ports = re.findall(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})', r.text)
-                    for ip, port in ip_ports:
-                        proxy = f"{ip}:{port}"
-                        with lock:
-                            if proxy not in seen_proxies:
-                                seen_proxies.add(proxy)
-                                proxies.append(proxy)
-    except Exception as e:
-        print(f"{C['error']}      Error scraping {url}: {str(e)[:50]}")
+                ip_ports = re.findall(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})', r.text)
+                for ip, port in ip_ports:
+                    proxy = f"{ip}:{port}"
+                    with lock:
+                        if proxy not in seen_proxies:
+                            seen_proxies.add(proxy)
+                            proxies.append(proxy)
+    except:
+        pass
     return proxies
 
 def scrape_from_raw(url):
     proxies = []
     try:
         headers = {'User-Agent': random.choice(USER_AGENTS)}
-        r = requests.get(url, headers=headers, timeout=10, verify=False)
+        r = requests.get(url, headers=headers, timeout=(10,20), verify=False)
         if r.status_code == 200:
-            lines = r.text.split('\n')
-            for line in lines:
+            for line in r.text.splitlines():
                 proxy = parse_proxy_line(line.strip())
                 if proxy:
                     proxies.append(proxy)
-    except Exception as e:
-        print(f"{C['error']}      Error scraping {url}: {str(e)[:50]}")
+    except:
+        pass
     return proxies
 
 def scrape_from_api(url):
     proxies = []
     try:
         headers = {'User-Agent': random.choice(USER_AGENTS)}
-        r = requests.get(url, headers=headers, timeout=10, verify=False)
+        r = requests.get(url, headers=headers, timeout=(10,20), verify=False)
         if r.status_code == 200:
             proxies = parse_api_json(r.text)
-    except Exception as e:
-        print(f"{C['error']}      Error scraping {url}: {str(e)[:50]}")
+    except:
+        pass
     return proxies
 
-def scrape_proxies():
+def scrape_proxies(max_limit=None):
     global scraped_proxies, seen_proxies
     scraped_proxies = []
     seen_proxies.clear()
     
+    if max_limit is not None and max_limit < 500:
+        sources = DATABAY_SOURCES
+        source_type = "FAST (databay only)"
+    else:
+        sources = ALL_SOURCES
+        source_type = "FULL (all sources)"
+    
+    if max_limit is None or max_limit <= 0:
+        limit_text = "UNLIMITED (max possible)"
+    else:
+        limit_text = f"{max_limit}"
+    
     print(f"\n{C['scrape']}╔════════════════════════════════════════════════════════════╗")
-    print(f"{C['scrape']}║              SCRAPING PROXIES FROM 200+ SOURCES          ║")
+    print(f"{C['scrape']}║              SCRAPING PROXIES FROM WORKING SOURCES        ║")
+    print(f"{C['scrape']}║              Mode: {source_type:<30}                    ║")
+    print(f"{C['scrape']}║              Target: {limit_text:<30}                    ║")
     print(f"{C['scrape']}╚════════════════════════════════════════════════════════════╝\n")
     
-    total_sources = 0
-    for source in SCRAPE_SOURCES:
-        pages = source.get('pages', 1)
-        total_sources += pages
-    
+    total_sources = sum(src.get('pages',1) for src in sources)
     current = 0
-    for source in SCRAPE_SOURCES:
-        pages = source.get('pages', 1)
-        for page in range(1, pages + 1):
+    
+    for source in sources:
+        if max_limit is not None and len(scraped_proxies) >= max_limit:
+            print(f"\n{C['success']}  ✓ Reached target of {max_limit} proxies, stopping scrape.")
+            break
+        for page in range(1, source.get('pages',1)+1):
+            if max_limit is not None and len(scraped_proxies) >= max_limit:
+                break
             current += 1
             url = source['url']
-            if pages > 1:
-                if 'page' in url:
-                    url = url.replace('page=1', f'page={page}')
-                elif '/page/' in url:
-                    url = re.sub(r'/page/\d+', f'/page/{page}', url)
-                elif '?page=' in url:
+            if page > 1:
+                if 'page=' in url:
                     url = re.sub(r'page=\d+', f'page={page}', url)
+                else:
+                    url = url.rstrip('/') + f'?page={page}'
             
-            print(f"{C['info']}  [{current}/{total_sources}] Scraping from {source['name']} (Page {page})...")
+            if max_limit is None:
+                print(f"{C['info']}Scraped Proxies: [{len(scraped_proxies):<6}] | Status: Scraping from {source['name']} (Page {page})...{C['reset']}", end='\r')
+            else:
+                print(f"{C['info']}Scraped Proxies: [{len(scraped_proxies)}/{max_limit}] | Status: Scraping from {source['name']} (Page {page})...{C['reset']}", end='\r')
             
             if source['type'] == 'html':
                 proxies = scrape_from_html(url)
@@ -477,128 +586,77 @@ def scrape_proxies():
             else:
                 proxies = scrape_from_raw(url)
             
-            print(f"{C['proxy']}      Found {len(proxies)} new proxies")
-            scraped_proxies.extend(proxies)
+            with lock:
+                if max_limit is not None:
+                    needed = max_limit - len(scraped_proxies)
+                    if needed <= 0:
+                        break
+                    proxies = proxies[:needed]
+                scraped_proxies.extend(proxies)
             
-            time.sleep(random.uniform(0.5, 1.5))
+            if max_limit is None:
+                print(f"{C['info']}Scraped Proxies: [{len(scraped_proxies):<6}] | Status: {source['name']} (Page {page}) -> +{len(proxies)}     {C['reset']}", end='\r')
+            else:
+                print(f"{C['info']}Scraped Proxies: [{len(scraped_proxies)}/{max_limit}] | Status: {source['name']} (Page {page}) -> +{len(proxies)}     {C['reset']}", end='\r')
+            
+            time.sleep(random.uniform(0.3,0.7))
     
-    print(f"\n{C['success']}  ✓ Total unique proxies scraped: {len(scraped_proxies)}")
-    
+    print(f"\n\n{C['success']}  ✓ Scraping finished! Total unique proxies scraped: {len(scraped_proxies)}")
     with open(os.path.join(RESULTS_DIR, "scraped_proxies.txt"), 'w') as f:
         for proxy in scraped_proxies:
             f.write(proxy + '\n')
-    
     return scraped_proxies
 
-def send_discord_file(protocol_type, proxies_list, extra_info=None):
-    if not proxies_list:
+def send_discord_file(protocol_type, proxies_list):
+    if not proxies_list or FILE_WEBHOOK == "YOUR_FILE_WEBHOOK_URL_HERE":
         return
-    
     try:
         filename = f"{protocol_type}_proxies.txt"
         filepath = os.path.join(RESULTS_DIR, filename)
-        
         with open(filepath, 'w') as f:
-            f.write(f"{len(proxies_list)} {protocol_type.upper()} Proxies\n")
-            f.write(f"MR.MYTHIC_KILLER Proxy Tool\n")
-            f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-            
-            if extra_info:
-                f.write("IP:PORT | COUNTRY | ANONYMITY | SPEED\n")
-                for proxy, info in zip(proxies_list, extra_info):
-                    country = info.get('country', 'Unknown')
-                    anonymity = info.get('anonymity', 'Unknown')
-                    speed = info.get('speed', 'N/A')
-                    f.write(f"{proxy} | {country} | {anonymity} | {speed}ms\n")
-            else:
-                for proxy in proxies_list:
-                    f.write(proxy + '\n')
-        
+            f.write(f"# {len(proxies_list)} {protocol_type.upper()} Proxies\n")
+            f.write(f"# Generated by MR.MYTHIC_KILLER Proxy Tool\n")
+            f.write(f"# {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"# format: ip:port\n")
+            for proxy in proxies_list:
+                f.write(proxy + '\n')
         with open(filepath, 'rb') as f:
             files = {'file': (filename, f, 'text/plain')}
-            
-            data = {
-                'content': f"📁 **{len(proxies_list)} {protocol_type.upper()} Proxies Found!**"
-            }
-            
-            r = requests.post(DISCORD_WEBHOOK, data=data, files=files, timeout=10)
-            
-            if r.status_code in [200, 204]:
-                print(f"{C['webhook']}      ↳ Discord file uploaded: {filename} ✓")
-            else:
-                print(f"{C['warning']}      ↳ Discord upload returned {r.status_code}")
-    
-    except Exception as e:
-        print(f"{C['error']}      ↳ Discord upload error: {str(e)[:30]}")
+            r = requests.post(FILE_WEBHOOK, files=files, timeout=10)
+            if r.status_code == 429:
+                retry_after = r.json().get('retry_after', 2)
+                time.sleep(retry_after)
+                requests.post(FILE_WEBHOOK, files=files, timeout=10)
+    except:
+        pass
 
 def send_all_proxy_files():
     global valid_proxies
-    
     if not valid_proxies:
-        print(f"{C['warning']}  ⚠ No valid proxies to upload")
         return
-    
-    print(f"\n{C['webhook']}╔════════════════════════════════════════════════════════════╗")
-    print(f"{C['webhook']}║              UPLOADING PROXIES TO DISCORD                 ║")
-    print(f"{C['webhook']}╚════════════════════════════════════════════════════════════╝\n")
-    
-    http_proxies = []
-    http_info = []
-    socks4_proxies = []
-    socks4_info = []
-    socks5_proxies = []
-    socks5_info = []
-    
-    for proxy, protocol, speed in valid_proxies:
-        ip = proxy.split(':')[0]
-        country, country_code = get_ip_info(ip)
-        anonymity = 'Unknown'
-        
-        info = {
-            'country': country,
-            'anonymity': anonymity,
-            'speed': f"{speed:.2f}"
-        }
-        
-        if protocol == 'http':
-            http_proxies.append(proxy)
-            http_info.append(info)
-        elif protocol == 'socks4':
-            socks4_proxies.append(proxy)
-            socks4_info.append(info)
-        elif protocol == 'socks5':
-            socks5_proxies.append(proxy)
-            socks5_info.append(info)
-    
+    http_proxies = [p[0] for p in valid_proxies if p[1] == 'http']
+    socks4_proxies = [p[0] for p in valid_proxies if p[1] == 'socks4']
+    socks5_proxies = [p[0] for p in valid_proxies if p[1] == 'socks5']
     if http_proxies:
-        send_discord_file('http', http_proxies, http_info)
+        send_discord_file('http', http_proxies)
         time.sleep(1)
-    
     if socks4_proxies:
-        send_discord_file('socks4', socks4_proxies, socks4_info)
+        send_discord_file('socks4', socks4_proxies)
         time.sleep(1)
-    
     if socks5_proxies:
-        send_discord_file('socks5', socks5_proxies, socks5_info)
+        send_discord_file('socks5', socks5_proxies)
         time.sleep(1)
-    
     all_proxies = [p[0] for p in valid_proxies]
     if all_proxies:
         send_discord_file('all_valid', all_proxies)
-    
-    print(f"{C['success']}  ✓ All proxy files uploaded to Discord!")
 
 def test_proxy_http(proxy, timeout=5):
     try:
-        proxies = {
-            'http': f'http://{proxy}',
-            'https': f'http://{proxy}'
-        }
+        proxies = {'http': f'http://{proxy}', 'https': f'http://{proxy}'}
         start = time.time()
         r = requests.get('http://httpbin.org/ip', proxies=proxies, timeout=timeout, verify=False)
-        elapsed = (time.time() - start) * 1000
         if r.status_code == 200:
-            return True, 'http', elapsed
+            return True, 'http', (time.time() - start) * 1000
     except:
         pass
     return False, None, 0
@@ -612,11 +670,9 @@ def test_proxy_socks4(proxy, timeout=5):
         sock.settimeout(timeout)
         sock.connect(('httpbin.org', 80))
         sock.send(b"GET /ip HTTP/1.0\r\nHost: httpbin.org\r\n\r\n")
-        response = sock.recv(1024)
+        sock.recv(1024)
         sock.close()
-        elapsed = (time.time() - start) * 1000
-        if b'200 OK' in response:
-            return True, 'socks4', elapsed
+        return True, 'socks4', (time.time() - start) * 1000
     except:
         pass
     return False, None, 0
@@ -630,142 +686,103 @@ def test_proxy_socks5(proxy, timeout=5):
         sock.settimeout(timeout)
         sock.connect(('httpbin.org', 80))
         sock.send(b"GET /ip HTTP/1.0\r\nHost: httpbin.org\r\n\r\n")
-        response = sock.recv(1024)
+        sock.recv(1024)
         sock.close()
-        elapsed = (time.time() - start) * 1000
-        if b'200 OK' in response:
-            return True, 'socks5', elapsed
+        return True, 'socks5', (time.time() - start) * 1000
     except:
         pass
     return False, None, 0
 
 def test_proxy_worker(proxy_type_filter='mix'):
     global total_tested, total_valid, total_invalid, total_failed, cpm
-    
     while not stop_testing and not proxy_queue.empty():
         try:
             proxy = proxy_queue.get(timeout=1)
         except:
             break
-        
         is_valid = False
         protocol = None
         speed = 0
-        
-        if proxy_type_filter in ['mix', 'http']:
+        if proxy_type_filter in ['mix','http']:
             is_valid, protocol, speed = test_proxy_http(proxy)
-        
-        if not is_valid and proxy_type_filter in ['mix', 'socks4']:
+        if not is_valid and proxy_type_filter in ['mix','socks4']:
             is_valid, protocol, speed = test_proxy_socks4(proxy)
-        
-        if not is_valid and proxy_type_filter in ['mix', 'socks5']:
+        if not is_valid and proxy_type_filter in ['mix','socks5']:
             is_valid, protocol, speed = test_proxy_socks5(proxy)
-        
         with lock:
             total_tested += 1
             if is_valid:
                 total_valid += 1
-                valid_proxies.append((proxy, protocol, speed))
-                status = f"{C['good']}✓ VALID"
+                country = get_country_full(proxy.split(':')[0])
+                anonymity = detect_anonymity(proxy, protocol)
+                valid_proxies.append((proxy, protocol, speed, anonymity))
+                threading.Thread(target=send_discord_embed, args=(proxy, protocol, speed, country, anonymity), daemon=True).start()
             else:
                 total_invalid += 1
-                invalid_proxies.append(proxy)
-                status = f"{C['bad']}✗ INVALID"
-            
+            remaining = proxy_queue.qsize()
             elapsed = time.time() - start_time
-            cpm = int((total_tested / elapsed) * 60) if elapsed > 0 else 0
-            
-            print(f"\r{C['test']}[{total_tested}] {status} {C['proxy']}{proxy} "
-                  f"{C['info']}| {protocol if protocol else 'N/A'} | "
-                  f"{C['cpm']}CPM: {cpm} | "
-                  f"{C['good']}Valid: {total_valid} | "
-                  f"{C['bad']}Invalid: {total_invalid} | "
-                  f"{C['fail']}Fail: {total_failed}", end=' ' * 10)
-            
+            cpm = int((total_tested/elapsed)*60) if elapsed>0 else 0
+            print(f"\r{C['test']}Working Proxies: {C['good']}{total_valid}{C['reset']} | Invalid: {C['bad']}{total_invalid}{C['reset']} | Remaining: {remaining} | CPM: {cpm}{C['reset']}", end='')
             update_title()
-        
         proxy_queue.task_done()
 
-def test_proxies(proxies_to_test, proxy_type_filter='mix', threads=50):
-    global stop_testing, proxy_queue, total_tested, total_valid, total_invalid, total_failed, start_time, valid_proxies
-    
+def test_proxies(proxies_to_test, proxy_type_filter='mix', threads=500):
+    global stop_testing, total_tested, total_valid, total_invalid, valid_proxies, start_time
     stop_testing = False
     total_tested = 0
     total_valid = 0
     total_invalid = 0
-    total_failed = 0
-    valid_proxies.clear()
-    invalid_proxies.clear()
+    valid_proxies = []
     start_time = time.time()
-    
-    for proxy in proxies_to_test:
-        proxy_queue.put(proxy)
-    
-    print(f"\n{C['test']}╔════════════════════════════════════════════════════════════╗")
-    print(f"{C['test']}║              TESTING PROXIES ({len(proxies_to_test)} total)            ║")
-    print(f"{C['test']}║  Filter: {proxy_type_filter.upper()} | Threads: {threads}                 ║")
-    print(f"{C['test']}╚════════════════════════════════════════════════════════════╝\n")
-    
+    for p in proxies_to_test:
+        proxy_queue.put(p)
+    print(f"\n{C['test']}Finished Scraping now Testing...{C['reset']}\n")
+    print(f"{C['test']}Testing {len(proxies_to_test)} proxies with {threads} threads...\n")
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
         futures = [executor.submit(test_proxy_worker, proxy_type_filter) for _ in range(threads)]
-        
         try:
             while total_tested < len(proxies_to_test):
                 time.sleep(0.1)
         except KeyboardInterrupt:
             stop_testing = True
             print(f"\n{C['warning']}\n  ⚠ Testing stopped by user!")
-    
     elapsed = time.time() - start_time
     print(f"\n\n{C['success']}  ✓ Testing Complete!")
     print(f"{C['info']}     Time: {format_time(elapsed)}")
     print(f"{C['good']}     Valid: {total_valid}")
     print(f"{C['bad']}     Invalid: {total_invalid}")
-    print(f"{C['cpm']}     Avg CPM: {int((total_tested/elapsed)*60) if elapsed>0 else 0}")
-    
     if valid_proxies:
         valid_proxies.sort(key=lambda x: x[2])
-        
-        http_proxies = [p[0] for p in valid_proxies if p[1] == 'http']
-        socks4_proxies = [p[0] for p in valid_proxies if p[1] == 'socks4']
-        socks5_proxies = [p[0] for p in valid_proxies if p[1] == 'socks5']
-        
+        http_proxies = [p[0] for p in valid_proxies if p[1]=='http']
+        socks4_proxies = [p[0] for p in valid_proxies if p[1]=='socks4']
+        socks5_proxies = [p[0] for p in valid_proxies if p[1]=='socks5']
         with open(os.path.join(RESULTS_DIR, "http_proxies.txt"), 'w') as f:
             f.write('\n'.join(http_proxies))
-        
         with open(os.path.join(RESULTS_DIR, "socks4_proxies.txt"), 'w') as f:
             f.write('\n'.join(socks4_proxies))
-        
         with open(os.path.join(RESULTS_DIR, "socks5_proxies.txt"), 'w') as f:
             f.write('\n'.join(socks5_proxies))
-        
         with open(os.path.join(RESULTS_DIR, "all_valid_proxies.txt"), 'w') as f:
-            for proxy, protocol, resp_time in valid_proxies:
-                f.write(f"{proxy} | {protocol} | {resp_time:.2f}ms\n")
-        
+            for proxy, protocol, resp_time, anonymity in valid_proxies:
+                f.write(f"{proxy} | {protocol} | {resp_time:.2f}ms | {anonymity}\n")
         print(f"{C['success']}  ✓ Saved valid proxies to {RESULTS_DIR}/")
-        
         send_all_proxy_files()
-    
     return valid_proxies
 
 def main():
     global scraped_proxies, start_time
-    
     print_banner()
-    
     print(f"\n{C['menu']}╔════════════════════════════════════════════════════════════╗")
-    print(f"{C['menu']}║                    SELECT MODE                            ║")
+    print(f"{C['menu']}║                    SELECT MODE                             ║")
     print(f"{C['menu']}╠════════════════════════════════════════════════════════════╣")
     print(f"{C['menu']}║  {C['option']}[1] {C['menu']}Auto Scraping Only                         ║")
     print(f"{C['menu']}║  {C['option']}[2] {C['menu']}Proxy Test Only                            ║")
     print(f"{C['menu']}║  {C['option']}[3] {C['menu']}Both (Scrape + Test)                       ║")
     print(f"{C['menu']}╚════════════════════════════════════════════════════════════╝")
-    
     choice = input(f"\n{C['option']}  [?] Enter your choice (1/2/3): {C['reset']}").strip()
     
     proxy_type_filter = 'mix'
-    if choice in ['2', '3']:
+    if choice in ['2','3']:
         print(f"\n{C['menu']}╔════════════════════════════════════════════════════════════╗")
         print(f"{C['menu']}║                SELECT PROXY TYPE TO TEST                   ║")
         print(f"{C['menu']}╠════════════════════════════════════════════════════════════╣")
@@ -774,54 +791,50 @@ def main():
         print(f"{C['menu']}║  {C['option']}[3] {C['menu']}SOCKS5 Only                               ║")
         print(f"{C['menu']}║  {C['option']}[4] {C['menu']}MIX (Auto-detect)                         ║")
         print(f"{C['menu']}╚════════════════════════════════════════════════════════════╝")
-        
         type_choice = input(f"\n{C['option']}  [?] Enter your choice (1/2/3/4): {C['reset']}").strip()
-        
-        type_map = {
-            '1': 'http',
-            '2': 'socks4',
-            '3': 'socks5',
-            '4': 'mix'
-        }
+        type_map = {'1':'http','2':'socks4','3':'socks5','4':'mix'}
         proxy_type_filter = type_map.get(type_choice, 'mix')
     
-    threads = 30
-    if choice in ['2', '3']:
+    max_limit = None
+    if choice in ['1','3']:
+        limit_input = input(f"\n{C['option']}  [?] Maximum proxies to scrape (0 or Enter for unlimited): {C['reset']}").strip()
+        if limit_input == "" or limit_input == "0":
+            max_limit = None
+        else:
+            try:
+                max_limit = int(limit_input)
+                if max_limit <= 0:
+                    max_limit = None
+            except:
+                max_limit = None
+    
+    threads = 500
+    if choice in ['2','3']:
         try:
-            threads = int(input(f"\n{C['option']}  [?] Testing threads (10-200, default 50): {C['reset']}") or "50")
-            threads = max(10, min(200, threads))
+            threads_input = input(f"\n{C['option']}  [?] Testing threads (10-500, default 500): {C['reset']}") or "500"
+            threads = int(threads_input)
+            threads = max(10, min(500, threads))
         except:
-            threads = 50
+            threads = 500
     
     start_time = time.time()
     
     if choice == '1':
-        proxies = scrape_proxies()
+        proxies = scrape_proxies(max_limit)
         print(f"\n{C['success']}  ✓ Scraping complete! {len(proxies)} proxies saved to {RESULTS_DIR}/scraped_proxies.txt")
-    
     elif choice == '2':
-        file_path = input(f"\n{C['option']}  [?] Enter path to proxy file (or press Enter for default 'proxies.txt'): {C['reset']}").strip()
-        if not file_path:
-            file_path = 'proxies.txt'
-        
-        try:
-            with open(file_path, 'r') as f:
-                proxies_to_test = []
-                for line in f:
-                    proxy = parse_proxy_line(line.strip())
-                    if proxy:
-                        proxies_to_test.append(proxy)
-            
-            print(f"{C['info']}  → Loaded {len(proxies_to_test)} proxies from {file_path}")
-            test_proxies(proxies_to_test, proxy_type_filter, threads)
-        except FileNotFoundError:
-            print(f"{C['error']}  ✗ File not found: {file_path}")
-    
+        file_path = input(f"\n{C['option']}  [?] Enter path to proxy file: {C['reset']}").strip()
+        if not os.path.exists(file_path):
+            print(f"{C['error']}  ✗ File not found!")
+            return
+        with open(file_path, 'r') as f:
+            proxies_to_test = [parse_proxy_line(line) for line in f if parse_proxy_line(line)]
+        print(f"{C['info']}  → Loaded {len(proxies_to_test)} proxies")
+        test_proxies(proxies_to_test, proxy_type_filter, threads)
     elif choice == '3':
-        proxies = scrape_proxies()
+        proxies = scrape_proxies(max_limit)
         if proxies:
             test_proxies(proxies, proxy_type_filter, threads)
-    
     else:
         print(f"{C['error']}  ✗ Invalid choice!")
     
