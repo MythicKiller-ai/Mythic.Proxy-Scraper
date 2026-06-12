@@ -1,4 +1,4 @@
-# 🔥 MR.MYTHIC_KILLER's Proxy Scraper & Tester — Version 6.0
+# 🔥 MR.MYTHIC_KILLER's Proxy Scraper & Tester 
 
 A fully advanced, multi-threaded **Proxy Scraper & Tester** built in Python.  
 It scrapes from **200+ live proxy sources** (Websites + GitHub + APIs + Telegram),  
@@ -8,13 +8,6 @@ via GeoIP API, and finally uploads organized proxy files to **Discord Webhook**.
 ---
 
 ## 🚀 Features
-
-### ✔ 200+ Proxy Sources
-- 50+ Websites
-- 100+ GitHub raw lists
-- 30+ API endpoints
-- Telegram & Cloud sources support
-- Auto-pagination
 
 ### ✔ Proxy Intelligence
 - Auto protocol detection: **HTTP / HTTPS / SOCKS4 / SOCKS5**
